@@ -24,6 +24,15 @@ register(
 )
 
 register(
+    id="CartPole-v2",
+    entry_point="gymnasium.envs.classic_control.myCartpoleF:myCartPoleEnvF",
+    vector_entry_point="gymnasium.envs.classic_control.myCartpoleF:myCartPoleVectorEnv",
+    max_episode_steps=500,
+    reward_threshold=475.0,
+)
+
+
+register(
     id="MountainCar-v0",
     entry_point="gymnasium.envs.classic_control.mountain_car:MountainCarEnv",
     max_episode_steps=200,
