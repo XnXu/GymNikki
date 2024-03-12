@@ -33,6 +33,15 @@ register(
 
 
 register(
+    id="CartPole-v2-quad",
+    entry_point="gymnasium.envs.classic_control.myCartpoleF_quad_reward:myCartPoleEnvF_quad_reward",
+    vector_entry_point="gymnasium.envs.classic_control.myCartpoleF_quad_reward:myCartPoleVectorEnv_quad_reward",
+    max_episode_steps=5000,
+    reward_threshold=-2000, #reward is quadratic sooooo
+)
+
+
+register(
     id="MountainCar-v0",
     entry_point="gymnasium.envs.classic_control.mountain_car:MountainCarEnv",
     max_episode_steps=200,

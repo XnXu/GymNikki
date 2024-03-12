@@ -70,7 +70,8 @@ class myCartPoleEnvF(gym.Env[np.ndarray, Union[int, np.ndarray]]):
     }
 
     def __init__(self, render_mode: Optional[str] = None):
-        self.fps = 50
+        self.fps = 100 # Nikki changed from 50 to 100 
+        
         self.gravity = 9.81
         self.masscart = 0.57+0.37
         self.masspole = 0.230
@@ -79,9 +80,15 @@ class myCartPoleEnvF(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         self.polemass_length = (self.masspole * self.length)
         self.force_mag = 10.0 # should be 8 for our case?
         self.tau = 1/self.fps  # seconds between state updates
+        # self.tau = 0.002
+        # self.tau = 0.02
+        self.metadata = {
+            "render_modes": ["human", "rgb_array"],
+            "render_fps": int(np.round(1.0 / self.tau)),
+        }
 
-        self.kinematics_integrator = "implicit-euler" # newly added from native CartPole
-
+        # self.kinematics_integrator = "semi-implicit-euler" # newly added from native CartPole
+        self.kinematics_integrator = "RK4"
         
         # self.min_action = -1.0 # min normalized voltage
         # self.max_action = 1.0 # max normalized voltage
@@ -97,15 +104,46 @@ class myCartPoleEnvF(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         self.Beq = 5.4 #  equivalent viscous damping coecient as seen at the motor pinion
         self.Bp = 0.0024 # viscous damping doecient, as seen at the pendulum axis
         
+        """
+
+        # self.fps = 50
+        gravity = 9.81
+        masscart = 0.57+0.37
+        masspole = 0.230
+        total_mass = masspole + masscart
+        length = 0.3302  # actually half the pole's length
+        # polemass_length = (self.masspole * self.length)
+        force_mag = 10.0 # should be 8 for our case?
+        tau = 0.02  # seconds between state updates
+        
+        # from Emi's thesis
+    
+        r_mp = 6.35e-3 # motor pinion radius
+        Jm = 3.90e-7 # rotor moment of inertia
+        Kg = 3.71 # planetary gearbox gear ratio
+        Rm = 2.6 # motor armature resistance
+        # both of these are in N.m.s/RAD, not degrees
+        Beq = 5.4 #  equivalent viscous damping coecient as seen at the motor pinion
+        Bp = 0.0024 # viscous damping doecient, as seen at the pendulum axis
+        
+        # dynamics for actuator
+        Kt = 0.00767 # motor torque constant
+        Km = 0.00767 # Back-ElectroMotive-Force (EMF) Constant V.s/RAD
+
+        """
         
         
 
         # Angle at which to fail the episode
-        self.theta_threshold_radians = 12  * math.pi / 180
-        self.x_threshold = 2.4 # this value is 2.4 in native gym cartpole env but Dylan had 0.4
+        # self.theta_threshold_radians = 12  * math.pi / 180 # according to Dylan's thesis
+        self.theta_threshold_radians = 0.2 # approximatedly 12 deg
+        # self.theta_threshold_radians = 36  * math.pi / 180 # this might be too wide
+        # self.x_threshold = 2.4 # this value is 2.4 in native gym cartpole env but Dylan had 0.4
+        self.x_threshold = 0.25 # adjusted to lab (Tc = 0.814 % Cart Travel (m) in Emi's thesis)
 
         # Angle limit set to 2 * theta_threshold_radians so failing observation
         # is still within bounds
+        # recall state = x, x_dot, theta, theta_dot !!!
         high = np.array(
                 [
                     self.x_threshold * 2,
@@ -115,7 +153,7 @@ class myCartPoleEnvF(gym.Env[np.ndarray, Union[int, np.ndarray]]):
                 ],
                 dtype = np.float32)
         # normalized volage
-        volt = 1; 
+        volt = 1;  
 
         self.action_space = spaces.Box(low=-volt, high=volt, shape=(1,), dtype=np.float32)
         self.observation_space = spaces.Box(-high, high, dtype=np.float32)
@@ -157,6 +195,8 @@ class myCartPoleEnvF(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         # ), f"{action!r} ({type(action)}) invalid"
 
         assert self.state is not None, "Call reset before using step method."
+        # x, theta, x_dot, theta_dot = self.state
+        # to be consistent with native CartPole state = x, x_dot, theta, theta_dot
         x, x_dot, theta, theta_dot = self.state
         
         costheta = math.cos(theta)
@@ -165,39 +205,10 @@ class myCartPoleEnvF(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         # denominator used in a bunch of stuff
         d = 4 * self.masscart * self.r_mp**2 + self.masspole * self.r_mp**2 + 4 * self.Jm * self.Kg**2         
 
-        #temp = (force + self.polemass_length * theta_dot * theta_dot * sintheta) / self.total_mass
         
         xacc = ((-4 * (self.Rm * self.r_mp**2 * self.Beq + self.Kg**2 * self.Kt * self.Km)) / (self.Rm *(d + 3 * self.r_mp**2 * self.masspole * sintheta**2))) * x_dot + ((-3 * self.Bp * self.r_mp**2 * costheta) / (self.length * (d + 3 * self.r_mp**2 * self.masspole * sintheta**2))) * theta_dot + ((-4 * self.masspole * self.length * self.r_mp**2 * sintheta) / (d + 3 * self.r_mp**2 * self.masspole * sintheta**2)) * theta_dot**2 + ((3 * self.masspole * self.gravity * self.r_mp**2 * costheta * sintheta) / (d + 3 * self.r_mp**2 * self.masspole * sintheta**2)) + (4 * self.r_mp * self.Kg * self.Kt) / (self.Rm * (d + 3 * self.r_mp**2 * self.masspole * sintheta**2)) * force
 
         thetaacc = ((-3 * (self.Rm * self.r_mp**2 * self.Beq + self.Kg**2 * self.Kt * self.Km) * costheta) / (self.length * self.Rm * (d + 3 * self.r_mp**2 * self.masspole * sintheta**2))) * x_dot + ((-3 * (self.masscart * self.r_mp**2 + self.masspole * self.r_mp**2 + self.Jm * self.Kg**2) * self.Bp) / (self.masspole * self.length**2 * (d + 3 * self.r_mp**2 * self.masspole * sintheta**2))) * theta_dot + ((-3 * self.masspole * self.r_mp**2 * sintheta * costheta) / (d + 3 * self.r_mp**2 * self.masspole * sintheta**2)) * theta_dot**2 + ((3 * (self.masscart * self.r_mp**2 + self.masspole * self.r_mp**2 + self.Jm * self.Kg**2) * self.gravity * sintheta) / (self.length * (d + 3 * self.r_mp**2 * self.masspole * sintheta**2))) + (3 * self.r_mp * self.Kg * self.Kt * costheta) / (self.length * self.Rm * (d + 3 * self.r_mp**2 * self.masspole * sintheta**2)) * force
-        
-        
-        '''thetaacc = (self.gravity * sintheta - costheta * temp) / \
-            (self.length * (4.0/3.0 - self.masspole * costheta * costheta / self.total_mass))
-        xacc = temp - self.polemass_length * thetaacc * costheta / self.total_mass'''
-        '''x = x + self.tau * x_dot
-        x_dot = x_dot + self.tau * xacc
-        theta = theta + self.tau * theta_dot
-        theta_dot = theta_dot + self.tau * thetaacc'''
-        
-        """
-        ## Step only takes one dt at a time, so this scheme might be ok. 
-        # However, consider using 
-        def RHS(x,t)
-            dxdt = Ax + Bu (where A and B are nonlinear functions of x)
-            return dxdt
-
-            from scipy.integrate import odeint
-            x0= vector of initial condition
-            num_steps = int(np.ceil(5./h_in)) 
-            t = np.linspace(0,5,num_steps+1)
-            h_in = 5./num_steps #This updates h to account for the possibility that it changed due to np.ceil.
-            sol = odeint(RHS, x0, t)
-
-        # t be set to self.tau; num_steps = 1; x0 = self.state
-        """
-
-         ## Below is copied from native cartpole
 
         if self.kinematics_integrator == "euler":
             x = x + self.tau * x_dot
@@ -210,29 +221,46 @@ class myCartPoleEnvF(gym.Env[np.ndarray, Union[int, np.ndarray]]):
             theta_dot = theta_dot + self.tau * thetaacc
             theta = theta + self.tau * theta_dot
 
-        self.state = (x, x_dot, theta, theta_dot)
-        return np.array(self.state, dtype=np.float32)
-        
+            """
+            # RK4
+            k1 = RHS(y, t = t[i], Vm = force)
+            k2 = RHS(y + h * k1 / 2, t = t[i] + h / 2, Vm = Vm)
+            k3 = RHS(y + h * k2 / 2, t = t[i] + h / 2, Vm = Vm)
+            k4 = RHS(y + h * k3, t = t[i] + h, Vm = Vm)
+            y = y + h/6 * (k1 + 2 * k2 + 2 * k3 + k4)
+
+            """
+        # self.state = (x, x_dot, theta, theta_dot)
+        return np.array( (x, x_dot, theta, theta_dot), dtype = np.float32)
+
     def step(self, action):
         # Cast action to float to strip np trappings
         force = self.force_mag * float(action)
+        # force = float(np.clip( self.force_mag * action[0], -self.force_mag, self.force_mag))
         self.state = self.stepPhysics(force) # generate state and then step?
         
-        x, theta, x_dot, theta_dot = self.state
+        # x, theta, x_dot, theta_dot = self.state
+        x, x_dot, theta, theta_dot = self.state
         
         terminated = bool(
+                (np.abs(theta) > self.theta_threshold_radians)
+                or (np.abs(x) > self.x_threshold)
+                ) #NX Changed to the above from
+        """
             x < -self.x_threshold
             or x > self.x_threshold
             or theta < -self.theta_threshold_radians
             or theta > self.theta_threshold_radians
-        )
+        """
 
+        
         if not terminated:
             reward = 1.0
         elif self.steps_beyond_terminated is None:
             # Pole just fell!
             self.steps_beyond_terminated = 0
             reward = 1.0
+
         else:
             if self.steps_beyond_terminated == 0:
                 logger.warn(
@@ -243,10 +271,16 @@ class myCartPoleEnvF(gym.Env[np.ndarray, Union[int, np.ndarray]]):
                 )
             self.steps_beyond_terminated += 1
             reward = 0.0
+        """
+        #NX changed from above to below
+        reward = int(not terminated)
+        info = {"reward_survive": reward}
+        """
 
         if self.render_mode == "human":
             self.render()
         return np.array(self.state, dtype=np.float32), reward, terminated, False, {}
+                 # quad_reward, terminated, False, {}
 
 
 
@@ -261,9 +295,16 @@ class myCartPoleEnvF(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         # Note that if you use custom reset bounds, it may lead to out-of-bound
         # state/observations.
         low, high = utils.maybe_parse_reset_bounds(
-            options, -0.05, 0.05  # default low
+            # options, -0.05, 0.05  # default low
+            options, -0.08, 0.08 #NX changed from above
         )  # default high
         self.state = self.np_random.uniform(low=low, high=high, size=(4,))
+        # self.state = np.array(
+        #         [ self.np_random.uniform(low = -0.08, high = 0.08), 
+        #           0 , 
+        #           self.np_random.uniform(low = -0.05, high = 0.05), 
+        #           0 ]
+        #         )
         self.steps_beyond_terminated = None
 
         if self.render_mode == "human":
